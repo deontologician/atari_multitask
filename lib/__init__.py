@@ -1,3 +1,4 @@
+import random
 import gym
 
 GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
@@ -19,8 +20,15 @@ GAME_NAMES = [''.join([g.capitalize() for g in game.split('_')])
               for game in GAMES]
 
 
+def setup():
+    num_test_games = ceil(len(GAMES) * 0.30)
+    test_games = sorted(random.sample(GAMES, num_test_games))
+    training_games = sorted(set(GAMES) - set(test_games))
+    return training_games, test_games
+
+
 def main():
-    import gym
+
     env = gym.make('SpaceInvaders-v0')
     env.reset()
     env.render()
