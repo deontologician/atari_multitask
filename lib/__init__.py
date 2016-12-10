@@ -1,4 +1,6 @@
 import random
+from math import ceil
+
 import gym
 
 GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
@@ -16,22 +18,44 @@ GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
          'video_pinball', 'wizard_of_wor', 'yars_revenge', 'zaxxon']
 
 
-GAME_NAMES = [''.join([g.capitalize() for g in game.split('_')])
+GAME_NAMES = [''.join([g.capitalize() for g in game.split('_')])+'-v0'
               for game in GAMES]
 
 
 def setup():
-    num_test_games = ceil(len(GAMES) * 0.30)
-    test_games = sorted(random.sample(GAMES, num_test_games))
-    training_games = sorted(set(GAMES) - set(test_games))
+    num_test_games = int(ceil(len(GAME_NAMES) * 0.30))
+    test_games = sorted(random.sample(GAME_NAMES, num_test_games))
+    training_games = sorted(set(GAME_NAMES) - set(test_games))
     return training_games, test_games
 
 
-def main():
+def random_play(game_names, strategy, per_game_limit=10000, render=False):
+    while True:  # TODO: real end condition
+        done = False
+        reward = 0.0
+        game_name = random.choice(game_names)
+        print 'Going to play {} next'.format(game_name)
+        env = gym.make(game_name)
+        observation = env.reset()
+        iterations = 0
+        while not done and iterations <= per_game_limit:
+            if render:
+                env.render()
+            action = strategy(env, observation, reward)
+            observation, reward, done, info = env.step(action)
+            if reward == 0.0:
+                iterations += 1
+            else:
+                iterations = 0
+        if iterations >= per_game_limit:
+            print 'Ran too long with no reward'
 
-    env = gym.make('SpaceInvaders-v0')
-    env.reset()
-    env.render()
+
+def main():
+    training_games, test_games = setup()
+    strategy = lambda env, observation, reward: env.action_space.sample()
+
+    random_play(training_games, strategy)
 
 
 # Strategy
@@ -44,7 +68,7 @@ def main():
 #  Strategy 1
 #      - Train from training games
 #      - Compare speed of learning on trained agent on unseen test games vs. untrained agent
-#  Stretegy 2.
+#  Strategy 2.
 #      - Train on all games
 #      - Compare absolute score with world records
 
