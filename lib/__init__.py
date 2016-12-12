@@ -23,38 +23,37 @@ GAME_NAMES = [''.join([g.capitalize() for g in game.split('_')])+'-v0'
               for game in GAMES]
 
 
-
-def main():
-    plan = TestPlan(holdout_fraction=0.30, regimen=1)
-
-    agent = RandomAgent()
-
-    plan.train(agent, render=False)
-
-
 class Agent(object):
-    def observe(self, env, observation, reward):
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, env, observation, reward):
         '''Called every time a new observation is available.
         Should return an action.
         '''
-
-    def thousand_turns(self):
-        '''Called at the end of every 1000 turns'''
+        return func(env, observation, reward)
 
     def episode(self):
         '''Called at the end of every episode'''
 
+    @classmethod
+    def wrap(cls, maybe_agent):
+        if isinstance(cls, maybe_agent):
+            return maybe_agent
+        else:
+            return cls(maybe_agent)
+
 
 class RandomAgent(Agent):
 
-    def observe(self, env, observation, reward):
+    def __init__(self):
+        pass
+
+    def __call__(self, env, observation, reward):
         return env.action_space.sample()
 
     def episode(self):
         print 'Episode over'
-
-    def thousand_turns(self):
-        print '1000 turns completed'
 
 
 class TestPlan(object):
@@ -109,41 +108,44 @@ class TestPlan(object):
         `max_episodes` will limit episodes to run
         '''
         episodes = 0
-        turns = 0
         games_in_a_row = 0
-        env = self._get_random_env(self.training_set)
+        env = get_random_env(self.training_set)
         while max_episodes == -1 or episodes <= max_episodes:
             done = False
             reward = 0.0
             if games_in_a_row >= self.regimen:
-                env = self._get_random_env(self.training_set)
+                env = get_random_env(self.training_set)
                 games_in_a_row = 0
             observation = env.reset()
             no_reward_for = 0
+
             while not done and no_reward_for <= self.max_no_reward_turns:
                 if render:
                     env.render()
-                action = agent.observe(env, observation, reward)
+                action = agent(env, observation, reward)
                 observation, reward, done, info = env.step(action)
                 no_reward_for = no_reward_for + 1 if not reward else 0
-                if turns % 1000 == 0:
-                    agent.thousand_turns()
 
             agent.episode()
             # update counts
             games_in_a_row += 1
-            turns += 1
             if episodes > -1:
                 episodes += 1
 
-    def _get_random_env(self, game_choices):
-        game_name = random.choice(game_choices)
-        print 'Going to play {} next'.format(game_name)
-        env = gym.make(game_name)
-        return env
+
+def get_random_env(game_choices):
+    game_name = random.choice(game_choices)
+    print 'Going to play {} next'.format(game_name)
+    env = gym.make(game_name)
+    return env
 
 
+def main():
+    plan = TestPlan(holdout_fraction=0.30, regimen=1)
 
+    agent = RandomAgent()
+
+    plan.train(agent, render=False)
 
 
 if __name__ == '__main__':
