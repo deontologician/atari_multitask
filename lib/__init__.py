@@ -1,4 +1,5 @@
 import random
+import json
 from math import ceil
 
 import gym
@@ -22,55 +23,127 @@ GAME_NAMES = [''.join([g.capitalize() for g in game.split('_')])+'-v0'
               for game in GAMES]
 
 
-def setup():
-    num_test_games = int(ceil(len(GAME_NAMES) * 0.30))
-    test_games = sorted(random.sample(GAME_NAMES, num_test_games))
-    training_games = sorted(set(GAME_NAMES) - set(test_games))
-    return training_games, test_games
-
-
-def random_play(game_names, strategy, per_game_limit=10000, render=False):
-    while True:  # TODO: real end condition
-        done = False
-        reward = 0.0
-        game_name = random.choice(game_names)
-        print 'Going to play {} next'.format(game_name)
-        env = gym.make(game_name)
-        observation = env.reset()
-        iterations = 0
-        while not done and iterations <= per_game_limit:
-            if render:
-                env.render()
-            action = strategy(env, observation, reward)
-            observation, reward, done, info = env.step(action)
-            if reward == 0.0:
-                iterations += 1
-            else:
-                iterations = 0
-        if iterations >= per_game_limit:
-            print 'Ran too long with no reward'
-
 
 def main():
-    training_games, test_games = setup()
-    strategy = lambda env, observation, reward: env.action_space.sample()
+    plan = TestPlan(holdout_fraction=0.30, regimen=1)
 
-    random_play(training_games, strategy)
+    agent = RandomAgent()
+
+    plan.train(agent, render=False)
 
 
-# Strategy
-# Setup: select a subset of games as training games, rest are tests
-# Train:
-#  1. pick a random game from training games
-#  2. use the agent to play the game until the game is done
-#  3. Pick another random game, repeat.
-# Test:
-#  Strategy 1
-#      - Train from training games
-#      - Compare speed of learning on trained agent on unseen test games vs. untrained agent
-#  Strategy 2.
-#      - Train on all games
-#      - Compare absolute score with world records
+class Agent(object):
+    def observe(self, env, observation, reward):
+        '''Called every time a new observation is available.
+        Should return an action.
+        '''
+
+    def thousand_turns(self):
+        '''Called at the end of every 1000 turns'''
+
+    def episode(self):
+        '''Called at the end of every episode'''
+
+
+class RandomAgent(Agent):
+
+    def observe(self, env, observation, reward):
+        return env.action_space.sample()
+
+    def episode(self):
+        print 'Episode over'
+
+    def thousand_turns(self):
+        print '1000 turns completed'
+
+
+class TestPlan(object):
+
+    def __init__(self,
+                 holdout_fraction=0.30,
+                 regimen=1,
+                 max_no_reward_turns=10000):
+        '''Creates a TestPlan for running a set of games.
+
+        `holdout_fraction` is a float for what percent of the overall games to
+            keep out of training to be used as test games.
+        `regimen` is the number of games in a row to play before switching
+            to a new random game from the training set.
+        `max_no_signal_turns` is how many turns to go in a row without any
+            reward before artificially saying the game is "done"
+        '''
+        num_test_games = int(ceil(len(GAME_NAMES) * holdout_fraction))
+        self.test_set = sorted(random.sample(GAME_NAMES, num_test_games))
+        self.training_set = sorted(set(GAME_NAMES) - set(self.test_set))
+        self.regimen = regimen
+        self.max_no_reward_turns = max_no_reward_turns
+
+    def save(self, filename):
+        '''Save the TestPlan to a file'''
+        filedata = {
+            'test_set': self.test_set,
+            'training_set': self.training_set,
+            'regimen': self.regimen,
+            'max_no_reward_turns': self.max_no_reward_turns,
+        }
+        with open(filename, 'w') as savefile:
+            json.dump(savefile, filedata, sort_keys=True, indent=True)
+
+    @staticmethod
+    def load_from_file(filename):
+        '''Load a TestPlan from a file'''
+        with open(filename, 'r') as savefile:
+            filedata = json.load(filename)
+            plan = TestPlan()
+            # Just overwrite the original fields. A little wasteful but w/e
+            plan.test_set = filedata['test_set']
+            plan.training_set = filedata['training_set']
+            plan.regimen = filedata['regimen']
+            plan.max_no_reward_turns = filedata['max_no_reward_turns']
+        return plan
+
+    def train(self, agent, render=False, max_episodes=-1):
+        '''Training in a loop
+        `agent` is the Agent to use to interact with the game
+        `render` is whether to render game frames in real time
+        `max_episodes` will limit episodes to run
+        '''
+        episodes = 0
+        turns = 0
+        games_in_a_row = 0
+        env = self._get_random_env(self.training_set)
+        while max_episodes == -1 or episodes <= max_episodes:
+            done = False
+            reward = 0.0
+            if games_in_a_row >= self.regimen:
+                env = self._get_random_env(self.training_set)
+                games_in_a_row = 0
+            observation = env.reset()
+            no_reward_for = 0
+            while not done and no_reward_for <= self.max_no_reward_turns:
+                if render:
+                    env.render()
+                action = agent.observe(env, observation, reward)
+                observation, reward, done, info = env.step(action)
+                no_reward_for = no_reward_for + 1 if not reward else 0
+                if turns % 1000 == 0:
+                    agent.thousand_turns()
+
+            agent.episode()
+            # update counts
+            games_in_a_row += 1
+            turns += 1
+            if episodes > -1:
+                episodes += 1
+
+    def _get_random_env(self, game_choices):
+        game_name = random.choice(game_choices)
+        print 'Going to play {} next'.format(game_name)
+        env = gym.make(game_name)
+        return env
+
+
+
 
 
 if __name__ == '__main__':
