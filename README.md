@@ -75,7 +75,7 @@ Now we do a couple more trials, maybe using `S` and `V` as the test
 games, then maybe for the third trial `U` and `S` as the tests.
 
     r_2 = avg(F_uxy(S)/F(S) , F_uxy(V)/F(V))
-    r_3 = avg(F_vxy(U)/F(U) + F_vxy(S)/F(S))
+    r_3 = avg(F_vxy(U)/F(U) , F_vxy(S)/F(S))
 
 Finally, we average the scores from all three trials:
 
