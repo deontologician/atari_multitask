@@ -1,6 +1,9 @@
+from __future__ import division
+
 import random
 import json
 from math import ceil
+from abc import ABCMeta, abstractmethod
 
 import gym
 
@@ -18,42 +21,71 @@ GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
          'tennis', 'time_pilot', 'tutankham', 'up_n_down', 'venture',
          'video_pinball', 'wizard_of_wor', 'yars_revenge', 'zaxxon']
 
+NUM_GAMES = len(GAMES)
 
-GAME_NAMES = [''.join([g.capitalize() for g in game.split('_')])+'-v0'
-              for game in GAMES]
+
+# The names above are easy to modify and read if we keep them
+# separate, but to load the gym you need the name in camelcase with
+# the version
+def game_name(raw_name):
+    return ''.join([g.capitalize() for g in game.split('_')]) + '-v0'
+
+GAME_NAMES = [game_name(game) for game in GAMES]
 
 
 class Agent(object):
-    def __init__(self, func):
-        self.func = func
 
-    def __call__(self, env, observation, reward):
+    __metaclass__ = ABCMeta  # ensures subclasses implement everything
+
+    @abstractmethod
+    def __call__(self, observation, reward):
         '''Called every time a new observation is available.
-        Should return an action.
+        Should return an action in the action space.
         '''
-        return func(env, observation, reward)
 
-    def episode(self):
-        '''Called at the end of every episode'''
+    @abstractmethod
+    def clone(self):
+        '''Returns a copy of the agent and its weights.'''
 
-    @classmethod
-    def wrap(cls, maybe_agent):
-        if isinstance(cls, maybe_agent):
-            return maybe_agent
-        else:
-            return cls(maybe_agent)
 
 
 class RandomAgent(Agent):
+    '''Simple random agent that has no state'''
 
-    def __init__(self):
-        pass
+    def __call__(self, observation, reward):
+        # The benchmark maps invalid actions to No-op (action 0)
+        return random.randint(0, 17)
 
-    def __call__(self, env, observation, reward):
-        return env.action_space.sample()
+    def clone(self):
+        return self  # RandomAgent has no state
 
-    def episode(self):
-        print 'Episode over'
+
+class TestPlan2(object):
+    def __init__(self,
+                 num_folds=5,
+                 frame_limit=10000000,
+                 max_turns_w_no_reward=10000,
+                 ):
+        self.num_folds = num_folds
+        self.frame_limit = frame_limit
+        self.max_turns_w_no_reward = max_turns_w_no_reward
+
+        games = set(GAME_NAMES)
+        fold_size = NUM_GAMES // num_folds
+        remainder = NUM_GAMES % num_folds
+        folds = []
+
+        for i in range(num_folds):
+            if i < remainder:
+                # distribute the remainder games evenly among the folds
+                folds[i] = random.sample(games, fold_size + 1)
+            else:
+                folds[i] = random.sample(games, fold_size)
+
+        for _ in range(NUM_GAMES - remainder):
+            random.sample(games, fold_size)
+
+
 
 
 class TestPlan(object):
@@ -150,3 +182,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+# TODO:
+#  - [ ] Map from action_space to max_action space in agent action taking
+#  - [ ] Rewrite test_plan to use the readme
