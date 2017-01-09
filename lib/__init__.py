@@ -230,6 +230,10 @@ def main():
 if __name__ == '__main__':
     main()
 
+
 # TODO:
 #  - [ ] Map from action_space to max_action space in agent action taking
 #  - [ ] Rewrite test_plan to use the readme
+#  - [ ] BenchmarkTransfer
+#  - [ ] BenchmarkMultitask
+#  - [ ] Ensure seeding works correctly
