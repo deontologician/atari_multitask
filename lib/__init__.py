@@ -4,6 +4,8 @@ import random
 import json
 from math import ceil
 from abc import ABCMeta, abstractmethod
+import string
+from datetime import datetime
 
 import gym
 
@@ -40,6 +42,13 @@ def get_random_env(game_choices):
     return env
 
 
+def fold_name(num):
+    name = string.ascii_uppercase[num % 26]
+    if num > 25:
+        name += str(num - 25)
+    return name
+
+
 class Agent(object):
 
     __metaclass__ = ABCMeta  # ensures subclasses implement everything
@@ -54,6 +63,15 @@ class Agent(object):
     def clone(self):
         '''Returns a copy of the agent and its weights.'''
 
+    @classmethod
+    @abstractmethod
+    def load(cls, filename):
+        '''Loads an agent (with weights) from a filename'''
+
+    @abstractmethod
+    def save(self, filename):
+        '''Saves the agent (with weights) to a filename'''
+
 
 
 class RandomAgent(Agent):
@@ -65,6 +83,13 @@ class RandomAgent(Agent):
 
     def clone(self):
         return self  # RandomAgent has no state
+
+    @classmethod
+    def load(cls, filename):
+        return cls()
+
+    def save(self, filename):
+        pass
 
 
 class BenchmarkParms(object):
@@ -121,22 +146,43 @@ class BenchmarkParms(object):
 
 
 
-class Benchmark(object):
-    def __init__(self, parms, architecture):
+class BenchmarkTransfer(object):
+    def __init__(self, parms, AgentClass, dir=None):
         self.parms = parms  # BenchmarkParms
+        self.AgentClass = AgentClass
+        self.untrained_agent = AgentClass()
+        self.test_agents = {}  # indexed by game name, since 1 per game
+        self.trained_agents = []  # indexed by fold number
+        self.dir = str(datetime.now()) if dir is None else dir
+        # TODO: add checkpoints, benchmark is ephemeral now
 
     def test_set(self, test_index):
+        '''Copy the test set of game names from the BenchmarkParms'''
         return set(self.parms.folds[test_index])
 
     def training_set(self, test_index):
+        '''Aggregate the training set from the current BenchmarParms'''
         return {x
                 for i, fold in enumerate(self.parms.folds)
                 for x in fold if i != test_index}
 
+    def ensure_test_agents(self):
+        for game_name in GAME_NAMES:
+            if game_name not in self.test_agents:
+                test_agent = self.AgentClass()
+                self.test_agents[game_name] = self.test(test_agent, game_name)
+
     def do_folds(self):
         for test_fold in range(len(self.parms.folds)):
-            test_set = self.test_set(test_fold)
             training_set = self.training_set(test_fold)
+            self.agents[test_fold] = agent = self.AgentClass()
+            self.train(agent, training_set)
+            agent.save(self.directory + '_trained_' + str(test_fold))
+
+            test_set = self.test_set(test_fold)
+            for game_name in test_set:
+                test_agent = self.test_agents[game_name]
+
 
 
     # def train(self, agent, render=False, max_episodes=-1):
