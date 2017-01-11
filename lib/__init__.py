@@ -144,16 +144,22 @@ class BenchmarkParms(object):
             parms.seed = filedata['seed']
         return parms
 
+class BenchmarkResult(object):
+    def __init__(self, agent):
+        self.agent = agent
 
 
-class BenchmarkTransfer(object):
+class TransferBenchmark(object):
     def __init__(self, parms, AgentClass, dir=None):
         self.parms = parms  # BenchmarkParms
         self.AgentClass = AgentClass
         self.untrained_agent = AgentClass()
-        self.test_agents = {}  # indexed by game name, since 1 per game
-        self.trained_agents = []  # indexed by fold number
-        self.dir = str(datetime.now()) if dir is None else dir
+        self.game_agents = {}  # indexed by game name, since 1 per game
+        self.game_results = {}  # benchmarks for each game agent
+        self.fold_agents = []  # indexed by fold number
+        self.fold_results = []  # Each fold gets a result for each game
+        self.dir = dir or self.default_dir()
+        # TODO: make dir recursively
         # TODO: add checkpoints, benchmark is ephemeral now
 
     def test_set(self, test_index):
@@ -166,22 +172,45 @@ class BenchmarkTransfer(object):
                 for i, fold in enumerate(self.parms.folds)
                 for x in fold if i != test_index}
 
-    def ensure_test_agents(self):
+    def default_dir(self):
+        time = datetime.now().strftime('%Y-%m-%d_%H.%M')
+        return 'benchmarks/' + time + '/'
+
+    def game_agent_filename(self, game_name):
+        return self.dir + 'game_agent_' + game_name
+
+    def fold_agent_filename(self, fold_num):
+        return self.dir + 'fold_agent_' + str(fold_num)
+
+    def tested_agent_filename(self, fold_num, game_name):
+        return self.dir + 'tested_agent_' + str(fold_num) + '_' + game_name
+
+    def ensure_game_agents(self):
         for game_name in GAME_NAMES:
-            if game_name not in self.test_agents:
-                test_agent = self.AgentClass()
-                self.test_agents[game_name] = self.test(test_agent, game_name)
+            if game_name not in self.game_agents:
+                game_agent = self.untrained_agent.clone()
+                self.game_results[game_name] = self.test(game_agent, game_name)
+                game_agent.save(self.game_agent_filename(game_name))
+                self.game_agents[game_name] = game_agent
 
     def do_folds(self):
-        for test_fold in range(len(self.parms.folds)):
-            training_set = self.training_set(test_fold)
-            self.agents[test_fold] = agent = self.AgentClass()
-            self.train(agent, training_set)
-            agent.save(self.directory + '_trained_' + str(test_fold))
+        self.ensure_game_agents()
 
-            test_set = self.test_set(test_fold)
+        for fold_num in range(len(self.parms.folds)):
+            training_set = self.training_set(fold_num)
+            fold_agent = self.untrained_agent.clone()
+            self.fold_agents[fold_num] = fold_agent
+            self.train(fold_agent, training_set)
+            fold_agent.save(self.fold_agent_filename(fold_num))
+
+            test_set = self.test_set(fold_num)
+            self.fold_results[fold_num] = fold_results = {}
+
             for game_name in test_set:
-                test_agent = self.test_agents[game_name]
+                tested_agent = fold_agent.clone()
+                fold_results[game_name] = self.test(tested_agent, game_name)
+                tested_agent.save(
+                    self.tested_agent_filename(fold_num, game_name)
 
 
 
@@ -234,6 +263,6 @@ if __name__ == '__main__':
 # TODO:
 #  - [ ] Map from action_space to max_action space in agent action taking
 #  - [ ] Rewrite test_plan to use the readme
-#  - [ ] BenchmarkTransfer
-#  - [ ] BenchmarkMultitask
+#  - [ ] TransferBenchmark
+#  - [ ] MultitaskBenchmark
 #  - [ ] Ensure seeding works correctly
