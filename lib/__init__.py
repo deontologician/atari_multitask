@@ -150,6 +150,39 @@ class BenchmarkResult(object):
 
 
 class TransferBenchmark(object):
+    '''Benchmark for testing knowledge transfer.
+
+    Uses k-fold cross-validation to test an agent's performance on a
+    new game. Each fold is a set of games held out from the training
+    set.  All other folds except that one are the training
+    set. Performance is compared as a ratio between the cumulative
+    score over time of a fresh agent vs. the cumulative score over
+    time of an agent trained on the training set. Both agents will be
+    seeing the game in the test set for the first time, but one of the
+    agents will have preparation, and the other will not. The ratio
+    measures how much that preparation helps.
+
+    For the purposes of this class, the term `game_agent` is used to
+    denote a fresh agent who has no preparation, but has trained on a
+    particular game. Game agents are identified by the name of their
+    game. A `fold_agent` is an agent who has been trained up on all
+    the games in the training set, i.e. everything but the test game
+    fold.  The folds are indexed by an integer, so the fold_agents are
+    also indexed by an integer indicating which fold is their test
+    set (all other folds are implicitly their training set).
+
+    In practice, we only care about the results of the game agents,
+    and don't need to keep the trained agent around once we have their
+    scores, since they are intended to be fresh. We do need to keep
+    around the fold agents' trained agent since we should start from
+    the same baseline on each test game. In other words, we shouldn't
+    allow the agent to train on the other test games first, since then
+    results would be dependent on the order in which we did tested
+    games in the fold. So we checkpoint the agent at the time it
+    finishes all of its training, and reset to that point before
+    testing on each game in the test fold.
+
+    '''
     def __init__(self, parms, AgentClass, dir=None):
         self.parms = parms  # BenchmarkParms
         self.AgentClass = AgentClass
@@ -173,19 +206,30 @@ class TransferBenchmark(object):
                 for x in fold if i != test_index}
 
     def default_dir(self):
+        '''A reasonable default directory to store benchmark results in'''
         time = datetime.now().strftime('%Y-%m-%d_%H.%M')
         return 'benchmarks/' + time + '/'
 
     def game_agent_filename(self, game_name):
+        '''Constructs a save filename for a game agent'''
         return self.dir + 'game_agent_' + game_name
 
     def fold_agent_filename(self, fold_num):
+        '''Constructs a save filename for a fold agent'''
         return self.dir + 'fold_agent_' + str(fold_num)
 
     def tested_agent_filename(self, fold_num, game_name):
+        '''Constructs a filename for an fold agent tested on a particular
+        game'''
         return self.dir + 'tested_agent_' + str(fold_num) + '_' + game_name
 
     def ensure_game_agents(self):
+        '''Ensures there is a game agent for every game.
+
+        Game agents don't cara about folds, and this function checks
+        if an agent already exists, so there's no harm in running this
+        function multiple times.
+        '''
         for game_name in GAME_NAMES:
             if game_name not in self.game_agents:
                 game_agent = self.untrained_agent.clone()
@@ -194,6 +238,10 @@ class TransferBenchmark(object):
                 self.game_agents[game_name] = game_agent
 
     def do_folds(self):
+        '''Runs through each fold, and trains an agent for each set.
+
+        The outer loop of this function should run k times.
+        '''
         self.ensure_game_agents()
 
         for fold_num in range(len(self.parms.folds)):
