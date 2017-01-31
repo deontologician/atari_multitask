@@ -25,6 +25,8 @@ GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
 
 NUM_GAMES = len(GAMES)
 
+# Number of rounds to see for any individual game when testing
+MAX_TEST_GAME_ROUNDS = 100000
 
 # The names above are easy to modify and read if we keep them
 # separate, but to load the gym you need the name in camelcase with
@@ -56,12 +58,12 @@ class Agent(object):
     @abstractmethod
     def __call__(self, observation, reward):
         '''Called every time a new observation is available.
-        Should return an action in the action space.
+        Should return an integer from 0 to 17 inclusive
         '''
 
     @abstractmethod
     def clone(self):
-        '''Returns a copy of the agent and its weights.'''
+        '''Returns a deep copy of the agent and its weights.'''
 
     @classmethod
     @abstractmethod
@@ -95,12 +97,11 @@ class RandomAgent(Agent):
 class BenchmarkParms(object):
     def __init__(self,
                  num_folds=5,
-                 frame_limit=10000000,
                  max_turns_w_no_reward=10000,
                  seed=None,
+                 max_test_game_rounds=100000,
                  ):
         self.num_folds = num_folds
-        self.frame_limit = frame_limit
         self.max_turns_w_no_reward = max_turns_w_no_reward
         self.seed = random.random() if seed is None else seed
 
@@ -124,8 +125,8 @@ class BenchmarkParms(object):
         filedata = {
             'folds': self.folds,
             'seed': self.seed,
-            'frame_limit': self.frame_limit,
             'max_turns_w_no_reward': self.max_turns_w_no_reward,
+            'max_test_game_rounds': self.max_test_game_rounds,
         }
         with open(filename, 'w') as savefile:
             json.dump(filedata, savefile, sort_keys=True, indent=True)
@@ -139,9 +140,9 @@ class BenchmarkParms(object):
             # Just overwrite the original fields. A little wasteful but w/e
             parms.folds = filedata['folds']
             parms.num_folds = len(parms.folds)
-            parms.frame_limit = filedata['frame_limit']
             parms.max_turns_w_no_reward = filedata['max_turns_w_no_reward']
             parms.seed = filedata['seed']
+            parms.max_test_game_rounds = filedata['max_test_game_rounds']
         return parms
 
 class BenchmarkResult(object):
@@ -258,9 +259,22 @@ class TransferBenchmark(object):
                 tested_agent = fold_agent.clone()
                 fold_results[game_name] = self.test(tested_agent, game_name)
                 tested_agent.save(
-                    self.tested_agent_filename(fold_num, game_name)
+                    self.tested_agent_filename(fold_num, game_name))
 
+    def interact(observation, reward, agent, env):
+        '''Performs the main interaction between the agent and the
+        environment'''
+        action = agent(observation, reward)
+        if action >= env.action_space.n:
+            action = 0
+        return env.step(action)
 
+    def test(agent, game_name):
+        env = gym.make(game_name)
+        # TODO: need to ensure all who play this environment get the
+        # same seed when starting it
+        observation = env.reset()
+        for i in range(0, MAX_TEST_ROUNDS):
 
     # def train(self, agent, render=False, max_episodes=-1):
     #     '''Training in a loop
