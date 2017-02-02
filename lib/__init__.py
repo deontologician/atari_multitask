@@ -25,9 +25,6 @@ GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
 
 NUM_GAMES = len(GAMES)
 
-# Number of rounds to see for any individual game when testing
-MAX_TEST_GAME_ROUNDS = 100000
-
 # The names above are easy to modify and read if we keep them
 # separate, but to load the gym you need the name in camelcase with
 # the version
@@ -148,6 +145,57 @@ class BenchmarkParms(object):
 class BenchmarkResult(object):
     def __init__(self, agent):
         self.agent = agent
+        self.rewards = []  # list of int rewards, index is round #
+        self.dones = []  # list of rounds where the agent died
+
+    def record_reward(self, reward):
+        self.rewards.append(reward)
+
+    def record_done(self, round):
+        self.dones.append(round)
+
+
+class TestRun(object):
+    def __init__(self, agent, game_name, parms):
+        self.agent = agent
+        self.game = self.create_env(game_name)
+        self.parms = parms
+        self.result = BenchmarkResult(agent)
+
+    def create_env(self, game_name):
+        env = gym.make(game_name)
+        # Ensure all being tested on this game get the same seed to
+        # reduce variability. Crucially, this means an agent can't see
+        # the same environment more than once!
+        env.seed(self.parms.seed)
+        return env
+
+    def step(self, action):
+        '''Steps the game one step, and doesn't return the useless info
+        dict'''
+        return self.game.step(action)[0:3]
+
+    def interact(self, observation, reward):
+        '''Performs the main interaction between the agent and the
+        environment'''
+        action = self.agent(observation, reward)
+        if action >= self.game.action_space.n:
+            action = 0
+        return self.step(action)
+
+    def test(self, agent, game_name):
+        env = self.create_env(game_name)
+        observation = env.reset()
+        reward = 0
+        for round_num in xrange(this.parms.max_test_game_rounds):
+            observation, reward, done = self.interact(observation, reward)
+            self.result.record_reward(reward)
+            if done:
+                observation = env.reset()
+                self.result.record_done(round_num)
+        return self.result
+
+
 
 
 class TransferBenchmark(object):
@@ -261,20 +309,6 @@ class TransferBenchmark(object):
                 tested_agent.save(
                     self.tested_agent_filename(fold_num, game_name))
 
-    def interact(observation, reward, agent, env):
-        '''Performs the main interaction between the agent and the
-        environment'''
-        action = agent(observation, reward)
-        if action >= env.action_space.n:
-            action = 0
-        return env.step(action)
-
-    def test(agent, game_name):
-        env = gym.make(game_name)
-        # TODO: need to ensure all who play this environment get the
-        # same seed when starting it
-        observation = env.reset()
-        for i in range(0, MAX_TEST_ROUNDS):
 
     # def train(self, agent, render=False, max_episodes=-1):
     #     '''Training in a loop
