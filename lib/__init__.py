@@ -6,6 +6,7 @@ from math import ceil
 from abc import ABCMeta, abstractmethod
 import string
 from datetime import datetime
+from collections import defaultdict
 
 import gym
 
@@ -32,13 +33,6 @@ def game_name(raw_name):
     return ''.join([g.capitalize() for g in game.split('_')]) + '-v0'
 
 GAME_NAMES = [game_name(game) for game in GAMES]
-
-
-def get_random_env(game_choices):
-    game_name = random.choice(game_choices)
-    print 'Going to play {} next'.format(game_name)
-    env = gym.make(game_name)
-    return env
 
 
 def fold_name(num):
@@ -96,7 +90,7 @@ class BenchmarkParms(object):
                  num_folds=5,
                  max_turns_w_no_reward=10000,
                  seed=None,
-                 max_test_game_rounds=100000,
+                 max_rounds_per_game=100000,
                  ):
         self.num_folds = num_folds
         self.max_turns_w_no_reward = max_turns_w_no_reward
@@ -123,7 +117,7 @@ class BenchmarkParms(object):
             'folds': self.folds,
             'seed': self.seed,
             'max_turns_w_no_reward': self.max_turns_w_no_reward,
-            'max_test_game_rounds': self.max_test_game_rounds,
+            'max_rounds_per_game': self.max_rounds_per_game,
         }
         with open(filename, 'w') as savefile:
             json.dump(filedata, savefile, sort_keys=True, indent=True)
@@ -139,7 +133,7 @@ class BenchmarkParms(object):
             parms.num_folds = len(parms.folds)
             parms.max_turns_w_no_reward = filedata['max_turns_w_no_reward']
             parms.seed = filedata['seed']
-            parms.max_test_game_rounds = filedata['max_test_game_rounds']
+            parms.max_rounds_per_game = filedata['max_rounds_per_game']
         return parms
 
 class BenchmarkResult(object):
@@ -154,14 +148,8 @@ class BenchmarkResult(object):
     def record_done(self, round):
         self.dones.append(round)
 
-
-class TestRun(object):
-    def __init__(self, agent, game_name, parms):
-        self.agent = agent
-        self.game = self.create_env(game_name)
-        self.parms = parms
-        self.result = BenchmarkResult(agent)
-
+class EnvMaker(object):
+    '''Mixin class'''
     def create_env(self, game_name):
         env = gym.make(game_name)
         # Ensure all being tested on this game get the same seed to
@@ -169,6 +157,14 @@ class TestRun(object):
         # the same environment more than once!
         env.seed(self.parms.seed)
         return env
+
+
+class TestRun(EnvMaker):
+    def __init__(self, agent, game_name, parms):
+        self.agent = agent
+        self.game = self.create_env(game_name)
+        self.parms = parms
+        self.result = BenchmarkResult(agent)
 
     def step(self, action):
         '''Steps the game one step, and doesn't return the useless info
@@ -183,15 +179,15 @@ class TestRun(object):
             action = 0
         return self.step(action)
 
-    def test(self, agent, game_name):
-        env = self.create_env(game_name)
-        observation = env.reset()
+    def __call__(self):
+        '''Test an agent on the given game'''
+        observation = self.game.reset()
         reward = 0
-        for round_num in xrange(this.parms.max_test_game_rounds):
+        for round_num in xrange(self.parms.max_rounds_per_game):
             observation, reward, done = self.interact(observation, reward)
             self.result.record_reward(reward)
             if done:
-                observation = env.reset()
+                observation = self.game.reset()
                 self.result.record_done(round_num)
         return self.result
 
@@ -275,7 +271,7 @@ class TransferBenchmark(object):
     def ensure_game_agents(self):
         '''Ensures there is a game agent for every game.
 
-        Game agents don't cara about folds, and this function checks
+        Game agents don't care about folds, and this function checks
         if an agent already exists, so there's no harm in running this
         function multiple times.
         '''
@@ -297,6 +293,7 @@ class TransferBenchmark(object):
             training_set = self.training_set(fold_num)
             fold_agent = self.untrained_agent.clone()
             self.fold_agents[fold_num] = fold_agent
+            run_training = TrainingRun(fold_agent, training_set, self.parms)
             self.train(fold_agent, training_set)
             fold_agent.save(self.fold_agent_filename(fold_num))
 
@@ -305,17 +302,49 @@ class TransferBenchmark(object):
 
             for game_name in test_set:
                 tested_agent = fold_agent.clone()
-                fold_results[game_name] = self.test(tested_agent, game_name)
+                run_tests = TestRun(tested_agent, game_name, self.parms)
+                fold_results[game_name] = run_tests()
                 tested_agent.save(
                     self.tested_agent_filename(fold_num, game_name))
 
 
-    # def train(self, agent, render=False, max_episodes=-1):
-    #     '''Training in a loop
-    #     `agent` is the Agent to use to interact with the game
-    #     `render` is whether to render game frames in real time
-    #     `max_episodes` will limit episodes to run
-    #     '''
+class TrainingRun(EnvMaker):
+    def __init__(self, agent, training_set, parms):
+        self.agent = agent
+        self.training_set = training_set
+        self.parms = parms
+        self.envs = defaultdict(self.create_env)
+        self.game_rounds_left = {game: self.max_test_game_rounds
+                                 for game in training_set}
+
+    def total_rounds_left(self):
+        return sum(self.game_rounds_left.values())
+
+    def sample_env(self):
+        '''Samples from remaining games in the training set, inversely
+        proportional to how much they've already been played. It has
+        the added benefit of not sampling games that have already
+        exhausted their round quota. It also doesn't care what order
+        the items of self.game_rounds_left arrive in.
+        '''
+
+        total_rounds_left = self.total_rounds_left()
+        threshold = random.randint(0, total_rounds_left)
+        cumulative_sum = 0
+        for game, rounds_left in self.game_rounds_left.items():
+            cumulative_sum += rounds_left
+            if cumulative_sum >= threshold:
+                break
+        return game, self.envs[game]
+
+    def __call__(self):
+        while self.total_rounds_left > 0:
+            game_name, env = self.sample_env()
+            # * training
+            # * each round, add a count to rounds played for the game
+            # * if we get no rewards, and max_turns_w_no_reward is hit,
+            # skip to the next game
+
     #     episodes = 0
     #     games_in_a_row = 0
     #     env = get_random_env(self.training_set)
@@ -328,7 +357,7 @@ class TransferBenchmark(object):
     #         observation = env.reset()
     #         no_reward_for = 0
 
-    #         while not done and no_reward_for <= self.max_no_reward_turns:
+    #         while not done and no_reward_for <= self.max_no_reward_rounds:
     #             if render:
     #                 env.render()
     #             action = agent(env, observation, reward)
