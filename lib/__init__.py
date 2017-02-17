@@ -136,17 +136,26 @@ class BenchmarkParms(object):
             parms.max_rounds_per_game = filedata['max_rounds_per_game']
         return parms
 
+
 class BenchmarkResult(object):
-    def __init__(self, agent):
+    def __init__(self, agent, game=None):
         self.agent = agent
         self.rewards = []  # list of int rewards, index is round #
         self.dones = []  # list of rounds where the agent died
+        self.games = []  # list of what games were played each round
+        if game is not None:
+            self.record_game(game, 0)
+        # TODO: make serializable
 
     def record_reward(self, reward):
         self.rewards.append(reward)
 
     def record_done(self, round):
         self.dones.append(round)
+
+    def record_game(self, game_name, round):
+        self.games.append((game_name, round))
+
 
 class EnvMaker(object):
     '''Mixin class'''
@@ -164,27 +173,17 @@ class TestRun(EnvMaker):
         self.agent = agent
         self.game = self.create_env(game_name)
         self.parms = parms
-        self.result = BenchmarkResult(agent)
-
-    def step(self, action):
-        '''Steps the game one step, and doesn't return the useless info
-        dict'''
-        return self.game.step(action)[0:3]
-
-    def interact(self, observation, reward):
-        '''Performs the main interaction between the agent and the
-        environment'''
-        action = self.agent(observation, reward)
-        if action >= self.game.action_space.n:
-            action = 0
-        return self.step(action)
+        self.result = BenchmarkResult(agent, game_name)
 
     def __call__(self):
         '''Test an agent on the given game'''
         observation = self.game.reset()
         reward = 0
         for round_num in xrange(self.parms.max_rounds_per_game):
-            observation, reward, done = self.interact(observation, reward)
+            action = self.agent(observation, reward)
+            if action >= self.game.action_space.n:
+                action = 0  # Map invalid actions to no-op
+            observation, reward, done, _ = self.game.step(action)
             self.result.record_reward(reward)
             if done:
                 observation = self.game.reset()
@@ -316,6 +315,7 @@ class TrainingRun(EnvMaker):
         self.envs = defaultdict(self.create_env)
         self.game_rounds_left = {game: self.max_test_game_rounds
                                  for game in training_set}
+        self.trace_result = BenchmarkResult(agent)
 
     def total_rounds_left(self):
         return sum(self.game_rounds_left.values())
@@ -335,50 +335,38 @@ class TrainingRun(EnvMaker):
             cumulative_sum += rounds_left
             if cumulative_sum >= threshold:
                 break
-        return game, self.envs[game]
+        return game, self.envs[game]  # Will lazily initialize env
+
+    def keep_playing(self, game_name, done, no_reward_turns):
+        return
 
     def __call__(self):
-        while self.total_rounds_left > 0:
-            game_name, env = self.sample_env()
-            # * training
-            # * each round, add a count to rounds played for the game
-            # * if we get no rewards, and max_turns_w_no_reward is hit,
-            # skip to the next game
-
-    #     episodes = 0
-    #     games_in_a_row = 0
-    #     env = get_random_env(self.training_set)
-    #     while max_episodes == -1 or episodes <= max_episodes:
-    #         done = False
-    #         reward = 0.0
-    #         if games_in_a_row >= self.regimen:
-    #             env = get_random_env(self.training_set)
-    #             games_in_a_row = 0
-    #         observation = env.reset()
-    #         no_reward_for = 0
-
-    #         while not done and no_reward_for <= self.max_no_reward_rounds:
-    #             if render:
-    #                 env.render()
-    #             action = agent(env, observation, reward)
-    #             observation, reward, done, info = env.step(action)
-    #             no_reward_for = no_reward_for + 1 if not reward else 0
-
-    #         agent.episode()
-    #         # update counts
-    #         games_in_a_row += 1
-    #         if episodes > -1:
-    #             episodes += 1
+        round = 0
+        while self.total_rounds_left() > 0:
+            game_name, game = self.sample_env()
+            self.result.record_game(game_name, round)
+            observation = game.reset()
+            reward = 0
+            done = False
+            no_reward_turns = 0
+            while (self.game_rounds_left[game_name] > 0 and
+                   not done and
+                   no_reward_turns < self.parms.max_turns_w_no_reward):
+                round += 1
+                action = self.agent(observation, reward)
+                if action >= game.action_space.n:
+                    action = 0  # Map invalid actions to no-op
+                observation, reward, done, _ = game.step(action)
+                self.result.record_reward(reward)
+                no_reward_turns = 0 if reward > 0 else no_reward_turns + 1
+                self.game_rounds_left[game_name] -= 1
+            self.result.record_done(round)
 
 
 def main():
     bp = BenchmarkParms()
-
-    architecture = RandomArchitecture()
-
-    bench = Benchmark(bp, architecture)
-
-    bench.train(render=False)
+    bench = TransferBenchmark(parms, RandomAgent)
+    bench.do_folds()
 
 
 if __name__ == '__main__':
@@ -386,8 +374,8 @@ if __name__ == '__main__':
 
 
 # TODO:
-#  - [ ] Map from action_space to max_action space in agent action taking
-#  - [ ] Rewrite test_plan to use the readme
-#  - [ ] TransferBenchmark
+#  - [X] Map from action_space to max_action space in agent action taking
+#  - [X] Rewrite test_plan to use the readme
+#  - [X] TransferBenchmark
 #  - [ ] MultitaskBenchmark
-#  - [ ] Ensure seeding works correctly
+#  - [X] Ensure seeding works correctly
