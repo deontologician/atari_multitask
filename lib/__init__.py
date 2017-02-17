@@ -281,6 +281,13 @@ class TransferBenchmark(object):
                 game_agent.save(self.game_agent_filename(game_name))
                 self.game_agents[game_name] = game_agent
 
+    def test(self, game_agent, game_name):
+        return TestRun(game_agent, game_name, self.parms)()
+
+    def train(self, fold_agent, training_set):
+        return TrainingRun(fold_agent, training_set, self.parms)()
+
+
     def do_folds(self):
         '''Runs through each fold, and trains an agent for each set.
 
@@ -292,7 +299,6 @@ class TransferBenchmark(object):
             training_set = self.training_set(fold_num)
             fold_agent = self.untrained_agent.clone()
             self.fold_agents[fold_num] = fold_agent
-            run_training = TrainingRun(fold_agent, training_set, self.parms)
             self.train(fold_agent, training_set)
             fold_agent.save(self.fold_agent_filename(fold_num))
 
@@ -301,8 +307,7 @@ class TransferBenchmark(object):
 
             for game_name in test_set:
                 tested_agent = fold_agent.clone()
-                run_tests = TestRun(tested_agent, game_name, self.parms)
-                fold_results[game_name] = run_tests()
+                fold_results[game_name] = self.test(tested_agent, game_name)
                 tested_agent.save(
                     self.tested_agent_filename(fold_num, game_name))
 
@@ -361,10 +366,11 @@ class TrainingRun(EnvMaker):
                 no_reward_turns = 0 if reward > 0 else no_reward_turns + 1
                 self.game_rounds_left[game_name] -= 1
             self.result.record_done(round)
+        return self.result
 
 
 def main():
-    bp = BenchmarkParms()
+    parms = BenchmarkParms()
     bench = TransferBenchmark(parms, RandomAgent)
     bench.do_folds()
 
