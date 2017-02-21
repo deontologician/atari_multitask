@@ -88,13 +88,14 @@ class RandomAgent(Agent):
 class BenchmarkParms(object):
     def __init__(self,
                  num_folds=5,
-                 max_turns_w_no_reward=10000,
+                 max_rounds_w_no_reward=10000,
                  seed=None,
                  max_rounds_per_game=100000,
                  ):
         self.num_folds = num_folds
-        self.max_turns_w_no_reward = max_turns_w_no_reward
-        self.seed = random.random() if seed is None else seed
+        self.max_rounds_w_no_reward = max_rounds_w_no_reward
+        self.seed = random.randint(0, 2**64-1) if seed is None else seed
+        self.max_rounds_per_game = max_rounds_per_game
 
         games = set(GAME_NAMES)
         fold_size = NUM_GAMES // num_folds
@@ -116,7 +117,7 @@ class BenchmarkParms(object):
         filedata = {
             'folds': self.folds,
             'seed': self.seed,
-            'max_turns_w_no_reward': self.max_turns_w_no_reward,
+            'max_rounds_w_no_reward': self.max_rounds_w_no_reward,
             'max_rounds_per_game': self.max_rounds_per_game,
         }
         with open(filename, 'w') as savefile:
@@ -131,7 +132,7 @@ class BenchmarkParms(object):
             # Just overwrite the original fields. A little wasteful but w/e
             parms.folds = filedata['folds']
             parms.num_folds = len(parms.folds)
-            parms.max_turns_w_no_reward = filedata['max_turns_w_no_reward']
+            parms.max_rounds_w_no_reward = filedata['max_rounds_w_no_reward']
             parms.seed = filedata['seed']
             parms.max_rounds_per_game = filedata['max_rounds_per_game']
         return parms
@@ -171,8 +172,8 @@ class EnvMaker(object):
 class TestRun(EnvMaker):
     def __init__(self, agent, game_name, parms):
         self.agent = agent
-        self.game = self.create_env(game_name)
         self.parms = parms
+        self.game = self.create_env(game_name)
         self.result = BenchmarkResult(agent, game_name)
 
     def __call__(self):
@@ -356,7 +357,7 @@ class TrainingRun(EnvMaker):
             no_reward_turns = 0
             while (self.game_rounds_left[game_name] > 0 and
                    not done and
-                   no_reward_turns < self.parms.max_turns_w_no_reward):
+                   no_reward_turns < self.parms.max_rounds_w_no_reward):
                 round += 1
                 action = self.agent(observation, reward)
                 if action >= game.action_space.n:
