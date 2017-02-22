@@ -75,15 +75,19 @@ class BenchmarkParms(object):
                  max_rounds_w_no_reward=10000,
                  seed=None,
                  max_rounds_per_game=100000,
+                 game_names=GAME_NAMES,
                  ):
         self.num_folds = num_folds
         self.max_rounds_w_no_reward = max_rounds_w_no_reward
         self.seed = random.randint(0, 2**64-1) if seed is None else seed
         self.max_rounds_per_game = max_rounds_per_game
+        self.game_names = game_names
 
-        games = set(GAME_NAMES)
-        fold_size = NUM_GAMES // num_folds
-        remainder = NUM_GAMES % num_folds
+        num_games = len(game_names)
+
+        games = set(game_names)
+        fold_size = num_games // num_folds
+        remainder = num_games % num_folds
         self.folds = [None] * num_folds
 
         for i in range(num_folds):

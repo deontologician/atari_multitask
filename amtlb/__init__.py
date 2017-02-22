@@ -1,2 +1,2 @@
-from .common import *
-from .transfer_benchmark import *
+from common import *
+import transfer_benchmark
