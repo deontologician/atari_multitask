@@ -100,7 +100,7 @@ class BenchmarkParms(object):
 
         assert(len(games) == 0)
 
-    def save(self, filename):
+    def save(self, filename=None):
         '''Save the TestPlan to a file'''
         filedata = {
             'folds': self.folds,
