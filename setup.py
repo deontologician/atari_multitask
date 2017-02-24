@@ -21,4 +21,7 @@ setup(
     install_requires=[
         'gym >= 0.5.6',
     ],
+    scripts=[
+        'runtests',
+    ],
 )

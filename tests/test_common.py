@@ -2,11 +2,10 @@ from functools import partial
 from random import randint, sample
 from string import uppercase, lowercase
 import json
-from cStringIO import StringIO
-
+import os.path
 
 import pytest
-from mock import patch, MagicMock
+from mock import MagicMock, patch
 
 import amtlb
 
@@ -37,15 +36,9 @@ def random_benchmark_parms(game_names):
     )
 
 @pytest.fixture
-def random_filename():
-    return ''.join(sample(lowercase, 10))
+def random_filename(tmpdir):
+    return os.path.join(str(tmpdir), ''.join(sample(lowercase, 10)))
 
-@pytest.fixture
-def random_file(random_filename):
-    fileobj = StringIO()
-    fake_open = MagicMock(return_value=fileobj)
-    with patch('__builtin__.open', new=fake_open):
-        yield fileobj
 
 def folds_equal(A, B):
     _A = {frozenset(a) for a in A}
@@ -76,14 +69,12 @@ class TestBenchmarkParms(object):
             all_games_in_folds.update(set(fold))
         assert set(game_names) == all_games_in_folds
 
-    def test_save_roundtrip(
-            self, random_benchmark_parms, random_file, random_filename):
+    def test_save_parms(self, random_benchmark_parms, random_filename):
         bp = random_benchmark_parms()
         bp.save(random_filename)
 
-        file_contents = random_file.getvalue()
-
-        j = json.loads(file_contents)
+        with open(random_filename, 'r') as fileobj:
+            j = json.load(fileobj)
 
         assert j.pop('num_folds') == bp.num_folds
         assert j.pop('max_rounds_w_no_reward') == bp.max_rounds_w_no_reward
@@ -92,3 +83,25 @@ class TestBenchmarkParms(object):
         assert j.pop('game_names') == bp.game_names
         assert folds_equal(j.pop('folds'), bp.folds)
         assert not j
+
+    def test_load_parms(self, random_benchmark_parms, random_filename):
+        bp = random_benchmark_parms()
+        test_data = {
+            "num_folds": bp.num_folds,
+            "max_rounds_w_no_reward": bp.max_rounds_w_no_reward,
+            "seed": bp.seed,
+            "max_rounds_per_game": bp.max_rounds_per_game,
+            "game_names": bp.game_names,
+            "folds": bp.folds,
+        }
+        with open(random_filename, 'w') as fileobj:
+            json.dump(test_data, fileobj)
+
+        bp2 = amtlb.BenchmarkParms.load_from_file(random_filename)
+
+        assert bp.num_folds == bp2.num_folds
+        assert bp.max_rounds_w_no_reward == bp2.max_rounds_w_no_reward
+        assert bp.seed == bp2.seed
+        assert bp.max_rounds_per_game == bp2.max_rounds_per_game
+        assert bp.game_names == bp2.game_names
+        assert folds_equal(bp.folds, bp2.folds)

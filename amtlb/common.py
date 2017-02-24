@@ -1,4 +1,5 @@
 import random
+import json
 from abc import ABCMeta, abstractmethod
 
 GAMES = ['air_raid', 'alien', 'amidar', 'assault', 'asterix',
@@ -103,10 +104,12 @@ class BenchmarkParms(object):
     def save(self, filename=None):
         '''Save the TestPlan to a file'''
         filedata = {
+            'num_folds': self.num_folds,
             'folds': self.folds,
             'seed': self.seed,
             'max_rounds_w_no_reward': self.max_rounds_w_no_reward,
             'max_rounds_per_game': self.max_rounds_per_game,
+            'game_names': self.game_names,
         }
         with open(filename, 'w') as savefile:
             json.dump(filedata, savefile, sort_keys=True, indent=True)
@@ -123,4 +126,5 @@ class BenchmarkParms(object):
             parms.max_rounds_w_no_reward = filedata['max_rounds_w_no_reward']
             parms.seed = filedata['seed']
             parms.max_rounds_per_game = filedata['max_rounds_per_game']
+            parms.game_names = filedata['game_names']
         return parms
