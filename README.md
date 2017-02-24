@@ -1,5 +1,7 @@
 # Atari Multitask & Transfer Learning Benchmark (AMTLB)
 
+[![Join the chat at https://gitter.im/ai-open-network/multitask_and_transfer_learning](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ai-open-network/multitask_and_transfer_learning)
+
 This is a library to test how a reinforcement learning architecture
 performs on all Atari games in OpenAI's gym. It performs two kinds of
 tests, one for transfer learning and one for multitask
