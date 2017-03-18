@@ -1,3 +1,6 @@
+# This repository is deprecated!
+Further development is continuing at [AI-ON/Multitask-and-Transfer-Learning](https://github.com/AI-ON/Multitask-and-Transfer-Learning). Please join us there!
+
 # Atari Multitask & Transfer Learning Benchmark (AMTLB)
 
 [![Join the chat at https://gitter.im/ai-open-network/multitask_and_transfer_learning](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ai-open-network/multitask_and_transfer_learning)
